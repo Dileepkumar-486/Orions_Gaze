@@ -6,10 +6,11 @@ import time
 import streamlit as st
 from dotenv import load_dotenv
 
-from langchain.document_loaders import PyPDFLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.embeddings import HuggingFaceEmbeddings
-from langchain.indexes import VectorstoreIndexCreator
+from langchain_community.document_loaders import PyPDFLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_community.embeddings import HuggingFaceEmbeddings
+# from langchain.vectorstores import VectorstoreIndexCreator
+from langchain_community.vectorstores import FAISS
 from langchain_google_genai import ChatGoogleGenerativeAI,GoogleGenerativeAI
 
 # ------------------------- Setup -------------------------
@@ -21,6 +22,7 @@ st.set_page_config(page_title="📚 Orion's Gaze - RAG Chatbot", layout="wide")
 
 # ------------------------- Helper Functions -------------------------
 def load_document(uploaded_file):
+    # ... (this function is correct, no change needed) ...
     suffix = uploaded_file.name.lower().split('.')[-1]
     if suffix != "pdf":
         st.error("❌ Only PDF files are supported.")
@@ -36,18 +38,25 @@ def load_document(uploaded_file):
     return docs
 
 
+# --- REPLACE THIS ENTIRE FUNCTION ---
 def create_vectorstore(docs):
     embed_model = HuggingFaceEmbeddings(
         model_name="thenlper/gte-small",
         model_kwargs={"device": "cpu"}
     )
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=700, chunk_overlap=150)
-    index = VectorstoreIndexCreator(
-        embedding=embed_model,
-        text_splitter=text_splitter
-    ).from_documents(docs)
-    return index.vectorstore
-
+    
+    # 1. Split the documents
+    split_docs = text_splitter.split_documents(docs)
+    
+    # 2. Create the vector store directly from the split documents
+    vectorstore = FAISS.from_documents(
+        documents=split_docs,
+        embedding=embed_model
+    )
+    
+    return vectorstore
+# --- END OF REPLACEMENT ---
 # ------------------------- Session Initialization -------------------------
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
@@ -168,80 +177,10 @@ with st.sidebar:
     )
 
     st.caption("🧠 Powered by Dileep + Mohan | Orion’s Gaze Edition")
-# # ------------------------- Main Chat Section -------------------------
-# st.title("💬 Orion’s Gaze - A hunter focusing intensely to find a specific target")
-# st.write("Ask questions from your uploaded PDFs.")
-
-# for msg in st.session_state.chat_history:
-#     with st.chat_message(msg["role"]):
-#         st.markdown(msg["content"])
-
-# if user_prompt := st.chat_input("Ask your question here..."):
-#     st.session_state.chat_history.append({"role": "user", "content": user_prompt})
-#     with st.chat_message("user"):
-#         st.markdown(user_prompt)
-
-#     if not st.session_state.selected_docs:
-#         response = "⚠️ Please select at least one processed document from the sidebar."
-#         st.session_state.chat_history.append({"role": "assistant", "content": response})
-#         with st.chat_message("assistant"):
-#             st.markdown(response)
-#     else:
-#         try:
-#             api_key = os.getenv("GOOGLE_API_KEY")
-#             if not api_key:
-#                 raise ValueError("Missing GOOGLE_API_KEY in .env")
-
-#             llm = GoogleGenerativeAI(model="gemini-2.5-flash", google_api_key=api_key)
-
-#             all_docs = []
-#             for name in st.session_state.selected_docs:
-#                 retriever = st.session_state.vectorstores[name].as_retriever(search_kwargs={"k": 15})
-#                 docs = retriever.get_relevant_documents(user_prompt)
-#                 all_docs.extend(docs)
-
-#             unique_docs = {doc.page_content: doc for doc in all_docs}.values()
-
-#             with st.expander("🔍 Retrieved Context Preview"):
-#                 for i, doc in enumerate(unique_docs):
-#                     st.markdown(f"**Chunk {i+1}:** {doc.page_content[:300]}...")
-
-#             context_text = "\n\n".join([doc.page_content for doc in unique_docs])
-#             prompt = f"Answer the following question using ONLY the context below.\n\nContext:\n{context_text}\n\nQuestion: {user_prompt}"
-
-#             full_response = ""
-#             with st.chat_message("assistant"):
-#                 placeholder = st.empty()
-#                 for token in llm.stream(prompt):
-#                     full_response += token
-#                     placeholder.markdown(full_response + "▌")
-#                     time.sleep(0.02)
-#                 placeholder.markdown(full_response)
-
-#             st.session_state.chat_history.append({"role": "assistant", "content": full_response})
-
-#         except Exception as e:
-#             err = f"❌ Error: {str(e)}"
-#             st.session_state.chat_history.append({"role": "assistant", "content": err})
-#             with st.chat_message("assistant"):
-#                 st.markdown(err)
-
-# # ------------------------- Footer -------------------------
-# st.markdown("---")
-# # st.caption("🚀 Orion’s Gaze | Streamed Gemini responses + optimized FAISS retrieval")
 
 # ------------------------- Main Chat Section -------------------------
 st.title("💬 Orion’s Gaze - A hunter focusing intensely to find a specific target")
 st.write("Ask questions from your uploaded PDFs.")
-
-# # --- 1. ADD CHECKBOX FOR LLM FALLBACK ---
-# st.checkbox(
-#     "Allow model to use general knowledge if answer is not in documents",
-#     key="llm_fallback",
-#     help="When checked, the AI can answer from its own knowledge if the uploaded PDFs don't contain the answer. When unchecked, it will only use the PDFs."
-# )
-# st.markdown("---")
-
 
 for msg in st.session_state.chat_history:
     with st.chat_message(msg["role"]):
@@ -289,7 +228,7 @@ if user_prompt := st.chat_input("Ask your question here..."):
             all_docs = []
             for name in st.session_state.selected_docs:
                 retriever = st.session_state.vectorstores[name].as_retriever(search_kwargs={"k": 15})
-                docs = retriever.get_relevant_documents(user_prompt)
+                docs = retriever.invoke(user_prompt)
                 all_docs.extend(docs)
 
             unique_docs = {doc.page_content: doc for doc in all_docs}.values()
